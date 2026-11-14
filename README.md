@@ -1,76 +1,92 @@
 # Aria2 OneDrive One-Click
 
-A minimal, public-IP-friendly Aria2 download box for Debian 13.
+A minimal Aria2 download box for Debian 13, designed for a single public browser UI and automatic OneDrive offload.
 
-- One browser UI: AriaNg
+- One WebUI: AriaNg on TCP 6880
 - Download engine: P3TERX Aria2 Pro
-- Automatic upload: the Aria2 completion hook calls rclone `move` to OneDrive
-- No server management panel, no Portainer, no Homepage, no separate rclone UI
-- One-line installer from GitHub
-
-The installer uses Docker Compose and performs the initial rclone configuration interactively. It does not silently claim that Microsoft OAuth can be skipped: you authorize OneDrive once during installation.
+- HTTP/HTTPS/FTP, BitTorrent and magnet links
+- Automatic completion hook: rclone `move` to OneDrive
+- No 1Panel, Portainer, Homepage, JDownloader or separate rclone UI
+- One-line installer
 
 ## Install
 
-On a fresh Debian 13 x86_64/arm64 VPS, run as root:
+Run as root on a fresh Debian 13 VPS (amd64 or arm64):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/main/install.sh | bash
 ```
 
-The installer installs Docker Engine if needed, creates a random Aria2 RPC secret, starts Aria2 Pro and AriaNg, then launches the rclone OneDrive setup. Follow the prompts and create an rclone remote named `onedrive`.
+The installer installs Docker if needed, creates a random RPC secret, guides the one-time rclone Microsoft OAuth setup, validates OneDrive, then starts the containers.
 
-After installation:
+For headless OAuth, rclone will print the exact `rclone authorize` command. Run it on a Windows PC with rclone installed, sign in to Microsoft, and paste the returned token JSON into the VPS prompt. No token is stored in this repository.
 
-- AriaNg: `http://VPS_IP:6880`
-- Aria2 RPC: TCP `6800` (used by AriaNg)
+## Access
+
+- AriaNg UI: `http://VPS_IP:6880`
+- Aria2 RPC: `http://VPS_IP:6800/jsonrpc` (used by AriaNg; protected by a random 256-bit secret)
 - BitTorrent/DHT: TCP+UDP `6888`
 
-In AriaNg, set the RPC host to `http://VPS_IP`, port `6800`, path `/jsonrpc`, and paste the generated RPC secret shown by the installer.
+In AriaNg, configure RPC host `http://VPS_IP`, port `6800`, path `/jsonrpc`, and the RPC secret printed by the installer.
 
-## OneDrive setup
+Open these ports in the VPS provider firewall and host firewall: TCP 6880, TCP 6800, TCP+UDP 6888.
 
-When prompted, create an rclone remote named exactly `onedrive`, choose storage type `Microsoft OneDrive`, and follow rclone's headless authorization flow. On a Windows machine with rclone installed, run the exact `rclone authorize` command printed by the VPS, sign in to Microsoft, then paste the returned token JSON back into the VPS prompt.
+**Security:** This bare-IP setup uses HTTP, not HTTPS. The RPC secret is not encrypted in transit. Do not use it over untrusted/public Wi-Fi. For stronger protection, use a VPN or later put the UI and RPC behind HTTPS with a domain. Never run Aria2 RPC without its random secret.
 
-The installer validates the remote and creates `onedrive:RemoteDownloads`. Aria2's completion hook then uploads completed files with `rclone move`: the VPS source is removed only after a successful transfer. Failed uploads remain on the VPS for retry.
+## Automatic OneDrive upload
 
-## Ports and security
+The upstream Aria2 Pro image has a built-in `SPECIAL_MODE=rclone` completion hook. This project configures it to upload to `onedrive:RemoteDownloads` using `rclone move`.
 
-| Port | Purpose |
-| --- | --- |
-| 6880/TCP | AriaNg web UI |
-| 6800/TCP | Aria2 JSON-RPC |
-| 6888/TCP+UDP | BitTorrent/DHT |
+- The source file is removed only after rclone reports successful transfer.
+- Failed transfers remain on the VPS.
+- The upstream upload hook retries failed transfers.
+- Aria2 downloads directly to the VPS; rclone uploads directly from VPS to OneDrive.
 
-The RPC port is protected by a randomly generated high-entropy secret. Do not replace it with a short password. This setup uses plain HTTP for bare-IP access; HTTP does not encrypt the RPC secret in transit. Use a trusted network/VPN or add a domain with HTTPS before using it over untrusted networks. Do not expose RPC without the secret.
+The rclone remote name must be `onedrive`. The installer creates `RemoteDownloads` automatically.
 
-## Data
+## Persistent data
 
-Everything is stored under `/opt/aria2-onedrive`:
+All persistent data is under `/opt/aria2-onedrive`:
 
-- `config/`: Aria2 configuration, session, rclone configuration and upload logs
-- `downloads/`: temporary download data; successfully uploaded files are moved off the VPS
+- `config/`: Aria2 state, rclone credentials, upload scripts and logs
+- `downloads/`: active and completed downloads awaiting upload
+- `.env`: random Aria2 RPC secret
+
+Protect this directory. It contains the Microsoft refresh token and RPC credential.
 
 ## Management
+
+View status/logs:
 
 ```bash
 cd /opt/aria2-onedrive
 docker compose ps
 docker compose logs -f aria2
-docker compose pull && docker compose up -d
 ```
 
-The `upgrade.sh` helper performs the pull/recreate operation. The `uninstall.sh` helper removes containers but preserves downloaded data and configuration unless `--purge` is explicitly supplied.
+Upgrade:
 
-## Scope
+```bash
+curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/main/upgrade.sh | bash
+```
 
-Aria2 handles HTTP/HTTPS/FTP, BitTorrent and magnet links. It is not a plugin-based file-hosting resolver like JDownloader; sites that require proprietary link extraction, browser sessions or captcha-solving may need a direct download URL.
+Uninstall containers but preserve data:
 
-## Credits
+```bash
+curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/main/uninstall.sh | bash
+```
 
-- [P3TERX/Aria2-Pro-Docker](https://github.com/P3TERX/Aria2-Pro-Docker)
-- [P3TERX/aria2.conf](https://github.com/P3TERX/aria2.conf)
+To also delete all downloads, configuration and OAuth credentials, run the downloaded uninstall script with `--purge` after reviewing it.
+
+## Limitations
+
+Aria2 supports direct HTTP/HTTPS/FTP URLs, BitTorrent and magnet links. It does not include JDownloader-style plugins for extracting links from every file-hosting website or handling arbitrary login/captcha workflows.
+
+## Upstream projects
+
+- [P3TERX/Aria2-Pro-Docker](https://github.com/P3TERX/Aria2-Pro-Docker) (MIT)
+- [P3TERX/aria2.conf](https://github.com/P3TERX/aria2.conf) (MIT; upload hook)
 - [AriaNg](https://github.com/mayswind/AriaNg)
 - [rclone](https://rclone.org/)
 
-The project orchestrates upstream containers and scripts; it does not redistribute their images.
+This repository orchestrates upstream components and does not redistribute their source code.
