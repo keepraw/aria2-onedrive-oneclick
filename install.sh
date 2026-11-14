@@ -108,7 +108,7 @@ if [[ -z "$RCLONE_REMOTE" ]]; then
       RCLONE_REMOTE="${REMOTE_LIST%:}"
     else
       echo "Available remotes:"
-      printf '%s\\n' "$REMOTE_LIST"
+      printf '%s\n' "$REMOTE_LIST"
       read -r -p "Enter remote name (without colon): " RCLONE_REMOTE </dev/tty
     fi
   fi
@@ -128,7 +128,7 @@ fi
 # Validate actual access before enabling automatic deletion after upload.
 docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest lsd "${RCLONE_REMOTE}:" >/dev/null
 
-printf 'drive-name=%s\\ndrive-dir=/RemoteDownloads\\nupload-log=/config/upload.log\\ndelete-empty-dir=true\\ndelete-dot-aria2=true\\ndelete-dot-torrent=true\\n' "$RCLONE_REMOTE" >"$BASE/config/script.conf"
+printf 'drive-name=%s\ndrive-dir=/RemoteDownloads\nupload-log=/config/upload.log\ndelete-empty-dir=true\ndelete-dot-aria2=true\ndelete-dot-torrent=true\n' "$RCLONE_REMOTE" >"$BASE/config/script.conf"
 cat >"$BASE/config/rclone.env" <<'EOF'
 RCLONE_CONFIG=/config/rclone.conf
 RCLONE_TRANSFERS=2
