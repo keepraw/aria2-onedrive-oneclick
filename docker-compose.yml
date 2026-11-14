@@ -22,8 +22,9 @@ services:
     volumes:
       - ./config:/config
       - ./downloads:/downloads
+    expose:
+      - "6800"
     ports:
-      - "6800:6800"
       - "6888:6888/tcp"
       - "6888:6888/udp"
     logging:
@@ -39,8 +40,32 @@ services:
     container_name: ariang
     restart: unless-stopped
     command: --port 6880
+    expose:
+      - "6880"
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+    mem_limit: 256m
+    cpus: 0.5
+
+  caddy:
+    image: caddy:2
+    container_name: aria2-caddy
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
     ports:
-      - "6880:6880"
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./caddy-data:/data
+      - ./caddy-config:/config
+    depends_on:
+      - aria2
+      - ariang
     logging:
       driver: json-file
       options:
