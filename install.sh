@@ -59,21 +59,48 @@ EOF
   chmod 600 "$BASE/.env"
 fi
 
-if [[ ! -f "$BASE/config/rclone.conf" ]]; then
-  echo "[4/7] Configure OneDrive (one-time OAuth)."
-  echo "Create an rclone remote named exactly: onedrive"
-  echo "Choose Microsoft OneDrive. For headless authorization, follow rclone's"
-  echo "on-screen instructions and run the displayed 'rclone authorize' command"
-  echo "on your Windows PC, then paste the returned token JSON when prompted."
-  docker run --rm -it -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest config </dev/tty
-  if [[ ! -s "$BASE/config/rclone.conf" ]]; then
-    echo "rclone.conf was not created. Re-run this installer after completing OAuth."
-    exit 1
+HOST_RCLONE_CONFIG=""
+if command -v rclone >/dev/null 2>&1; then
+  HOST_RCLONE_CONFIG="$(rclone config file 2>/dev/null | tail -n 1 || true)"
+fi
+
+if [[ ! -s "$BASE/config/rclone.conf" ]]; then
+  if [[ -n "$HOST_RCLONE_CONFIG" && -s "$HOST_RCLONE_CONFIG" ]]; then
+    echo "[4/7] Reusing the existing host rclone configuration..."
+    install -m 600 "$HOST_RCLONE_CONFIG" "$BASE/config/rclone.conf"
+  else
+    echo "[4/7] No existing host rclone.conf found. Starting one-time OAuth setup."
+    echo "Create a remote named onedrive, or follow the remote-name prompt below."
+    docker run --rm -it -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest config </dev/tty
   fi
 fi
 
+if [[ ! -s "$BASE/config/rclone.conf" ]]; then
+  echo "rclone.conf was not found or created."
+  exit 1
+fi
+
+REMOTE_LIST="$(docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest listremotes)"
+if grep -qx 'o:' <<<"$REMOTE_LIST"; then
+  RCLONE_REMOTE="o"
+else
+  REMOTE_COUNT="$(grep -c ':' <<<"$REMOTE_LIST" || true)"
+  if [[ "$REMOTE_COUNT" -eq 1 ]]; then
+    RCLONE_REMOTE="${REMOTE_LIST%:}"
+  else
+    echo "Available rclone remotes:"
+    printf '%s\\n' "$REMOTE_LIST"
+    read -r -p "Enter the remote name to use (without colon): " RCLONE_REMOTE </dev/tty
+  fi
+fi
+
+if [[ -z "$RCLONE_REMOTE" ]] || ! grep -qx "${RCLONE_REMOTE}:" <<<"$REMOTE_LIST"; then
+  echo "Remote '$RCLONE_REMOTE' not found in rclone.conf."
+  exit 1
+fi
+
 cat >"$BASE/config/script.conf" <<'EOF'
-drive-name=onedrive
+drive-name=${RCLONE_REMOTE}
 drive-dir=/RemoteDownloads
 upload-log=/config/upload.log
 delete-empty-dir=true
@@ -89,8 +116,8 @@ EOF
 chmod 600 "$BASE/config/rclone.conf" "$BASE/config/script.conf" "$BASE/config/rclone.env"
 
 echo "[5/7] Validating OneDrive remote..."
-docker run --rm -v "$BASE/config:/config" rclone/rclone:latest   lsd onedrive: >/dev/null
-docker run --rm -v "$BASE/config:/config" rclone/rclone:latest   mkdir onedrive:RemoteDownloads
+docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest lsd "${RCLONE_REMOTE}:" >/dev/null
+docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest mkdir "${RCLONE_REMOTE}:RemoteDownloads"
 
 echo "[6/7] Installing Compose project..."
 curl -fsSL "https://raw.githubusercontent.com/$REPO/main/docker-compose.yml" -o "$BASE/docker-compose.yml"
