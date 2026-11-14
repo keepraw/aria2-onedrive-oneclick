@@ -21,38 +21,28 @@ The installer installs Docker if needed, creates a random RPC secret, detects an
 
 For headless OAuth, rclone will print the exact `rclone authorize` command. Run it on a Windows PC with rclone installed, sign in to Microsoft, and paste the returned token JSON into the VPS prompt. No token is stored in this repository.
 
-## Cloudflare domain and HTTPS
+## Cloudflare Tunnel (safe alongside Ghost or another web server)
 
-For an already-installed server, set the Cloudflare DNS A record `dl` to the VPS public IP, enable **Proxied** (orange cloud), and set Cloudflare SSL/TLS to **Full (strict)**. Then run:
+This deployment does **not** bind host TCP 80 or 443. It is designed to coexist with Ghost, Nginx, Apache, Caddy or another site already using those ports.
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/main/enable-domain.sh | bash
-```
-
-This migration preserves existing rclone OAuth configuration, downloads, Aria2 session and RPC secret. It adds Caddy as an HTTPS reverse proxy without introducing another WebUI. Both AriaNg and Aria2 RPC are routed through the same hostname. TCP 6800 and 6880 are not published by Docker after migration.
-
-Open **TCP 80/443** for the Caddy origin (certificate issuance and HTTPS) and **TCP+UDP 6888** for BitTorrent. Close any previously allowed public 6800/6880 ports. Ensure there is no other service occupying 80 or 443.
-
-Use `https://dl.557722.xyz`. In AriaNg RPC settings:
-- Protocol: `WebSocket (Security)` / `wss`
-- Host: `dl.557722.xyz`
-- Port: `443`
-- Interface: `jsonrpc`
-- Secret: the existing secret from `/opt/aria2-onedrive/.env`
-
-You can also open `https://dl.557722.xyz/#!/settings/rpc/set/wss/dl.557722.xyz/443/jsonrpc` to prefill the nonsecret RPC settings. Paste your RPC secret manually.
-
-Cloudflare proxy helps browser access to the UI; it does not accelerate VPS outbound downloads. Cloudflare's standard HTTP proxy does not handle BitTorrent/DHT.
-
-## First installation
-
-For a fresh Debian 13 VPS:
+1. In Cloudflare Zero Trust, create a Cloudflare Tunnel for this VPS.
+2. Add a published application route:
+   - Hostname: `dl.557722.xyz`
+   - Service: `http://caddy:8080`
+3. Copy the tunnel token.
+4. On the VPS, run:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/fix/cloudflare-tunnel-ghost-safe/enable-tunnel.sh | bash
 ```
 
-The installer defaults to `DOMAIN=dl.557722.xyz` and reuses an already-configured host rclone remote named `o:` when available. Otherwise it starts the rclone authorization wizard.
+Paste the token when prompted. It is stored in `/opt/aria2-onedrive/.env` with root-only permissions. Do not share it.
+
+The script requires an existing Aria2 installation and rclone config, validates the new Compose configuration before replacing the project files, and starts cloudflared. It does not change Ghost, the host reverse proxy, or host ports 80/443.
+
+In AriaNg, configure RPC as WSS, host `dl.557722.xyz`, port `443`, path `/jsonrpc`, and use the existing RPC secret from `/opt/aria2-onedrive/.env`.
+
+Open only TCP+UDP 6888 for BitTorrent if required. Do not expose 6800 or 6880 publicly. The tunnel carries the browser UI and RPC over HTTPS/WebSocket.
 
 ## Automatic OneDrive upload
 
