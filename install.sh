@@ -65,7 +65,7 @@ if [[ ! -f "$BASE/config/rclone.conf" ]]; then
   echo "Choose Microsoft OneDrive. For headless authorization, follow rclone's"
   echo "on-screen instructions and run the displayed 'rclone authorize' command"
   echo "on your Windows PC, then paste the returned token JSON when prompted."
-  docker run --rm -it -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest config
+  docker run --rm -it -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest config </dev/tty
   if [[ ! -s "$BASE/config/rclone.conf" ]]; then
     echo "rclone.conf was not created. Re-run this installer after completing OAuth."
     exit 1
