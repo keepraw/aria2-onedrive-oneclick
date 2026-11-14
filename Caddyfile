@@ -1,0 +1,12 @@
+{$DOMAIN} {
+    encode zstd gzip
+
+    @rpc path /jsonrpc
+    handle @rpc {
+        reverse_proxy aria2:6800
+    }
+
+    handle {
+        reverse_proxy ariang:6880
+    }
+}
