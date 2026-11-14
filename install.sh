@@ -39,6 +39,10 @@ EOF
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 systemctl enable --now docker
+if ! docker compose version >/dev/null 2>&1; then
+  apt-get update
+  apt-get install -y docker-compose-plugin
+fi
 
 echo "[3/7] Preparing persistent directories..."
 mkdir -p "$BASE"/{config,downloads}
