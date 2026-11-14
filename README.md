@@ -2,7 +2,7 @@
 
 A minimal Aria2 download box for Debian 13, designed for a single public browser UI and automatic OneDrive offload.
 
-- One WebUI: AriaNg on TCP 6880
+- One WebUI: AriaNg at https://dl.557722.xyz through Caddy and Cloudflare
 - Download engine: P3TERX Aria2 Pro
 - HTTP/HTTPS/FTP, BitTorrent and magnet links
 - Automatic completion hook: rclone `move` to OneDrive
@@ -21,17 +21,38 @@ The installer installs Docker if needed, creates a random RPC secret, detects an
 
 For headless OAuth, rclone will print the exact `rclone authorize` command. Run it on a Windows PC with rclone installed, sign in to Microsoft, and paste the returned token JSON into the VPS prompt. No token is stored in this repository.
 
-## Access
+## Cloudflare domain and HTTPS
 
-- AriaNg UI: `http://VPS_IP:6880`
-- Aria2 RPC: `http://VPS_IP:6800/jsonrpc` (used by AriaNg; protected by a random 256-bit secret)
-- BitTorrent/DHT: TCP+UDP `6888`
+For an already-installed server, set the Cloudflare DNS A record `dl` to the VPS public IP, enable **Proxied** (orange cloud), and set Cloudflare SSL/TLS to **Full (strict)**. Then run:
 
-In AriaNg, configure RPC host `http://VPS_IP`, port `6800`, path `/jsonrpc`, and the RPC secret printed by the installer.
+```bash
+curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/main/enable-domain.sh | bash
+```
 
-Open these ports in the VPS provider firewall and host firewall: TCP 6880, TCP 6800, TCP+UDP 6888.
+This migration preserves existing rclone OAuth configuration, downloads, Aria2 session and RPC secret. It adds Caddy as an HTTPS reverse proxy without introducing another WebUI. Both AriaNg and Aria2 RPC are routed through the same hostname. TCP 6800 and 6880 are not published by Docker after migration.
 
-**Security:** This bare-IP setup uses HTTP, not HTTPS. The RPC secret is not encrypted in transit. Do not use it over untrusted/public Wi-Fi. For stronger protection, use a VPN or later put the UI and RPC behind HTTPS with a domain. Never run Aria2 RPC without its random secret.
+Open **TCP 80/443** for the Caddy origin (certificate issuance and HTTPS) and **TCP+UDP 6888** for BitTorrent. Close any previously allowed public 6800/6880 ports. Ensure there is no other service occupying 80 or 443.
+
+Use `https://dl.557722.xyz`. In AriaNg RPC settings:
+- Protocol: `WebSocket (Security)` / `wss`
+- Host: `dl.557722.xyz`
+- Port: `443`
+- Interface: `jsonrpc`
+- Secret: the existing secret from `/opt/aria2-onedrive/.env`
+
+You can also open `https://dl.557722.xyz/#!/settings/rpc/set/wss/dl.557722.xyz/443/jsonrpc` to prefill the nonsecret RPC settings. Paste your RPC secret manually.
+
+Cloudflare proxy helps browser access to the UI; it does not accelerate VPS outbound downloads. Cloudflare's standard HTTP proxy does not handle BitTorrent/DHT.
+
+## First installation
+
+For a fresh Debian 13 VPS:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/main/install.sh | bash
+```
+
+The installer defaults to `DOMAIN=dl.557722.xyz` and reuses an already-configured host rclone remote named `o:` when available. Otherwise it starts the rclone authorization wizard.
 
 ## Automatic OneDrive upload
 
