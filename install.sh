@@ -60,53 +60,69 @@ EOF
 fi
 
 HOST_RCLONE_CONFIG=""
+RCLONE_REMOTE=""
+
+# Prefer the already-working host rclone configuration. This is important
+# because Docker containers cannot see /root/.config/rclone automatically.
 if command -v rclone >/dev/null 2>&1; then
   HOST_RCLONE_CONFIG="$(rclone config file 2>/dev/null | tail -n 1 || true)"
-fi
-
-if [[ ! -s "$BASE/config/rclone.conf" ]]; then
-  if [[ -n "$HOST_RCLONE_CONFIG" && -s "$HOST_RCLONE_CONFIG" ]]; then
-    echo "[4/7] Reusing the existing host rclone configuration..."
-    install -m 600 "$HOST_RCLONE_CONFIG" "$BASE/config/rclone.conf"
-  else
-    echo "[4/7] No existing host rclone.conf found. Starting one-time OAuth setup."
-    echo "Create a remote named onedrive, or follow the remote-name prompt below."
-    docker run --rm -it -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest config </dev/tty
+  if [[ -n "$HOST_RCLONE_CONFIG" && -s "$HOST_RCLONE_CONFIG" ]] && rclone listremotes 2>/dev/null | grep -qx 'o:'; then
+    if rclone lsd o: >/dev/null 2>&1; then
+      RCLONE_REMOTE="o"
+      echo "[4/7] Found working host remote o:. Reusing its configuration."
+      install -m 600 "$HOST_RCLONE_CONFIG" "$BASE/config/rclone.conf"
+    fi
   fi
 fi
 
-if [[ ! -s "$BASE/config/rclone.conf" ]]; then
-  echo "rclone.conf was not found or created."
+# If there is already a project-specific config, keep it and discover its remote.
+if [[ -z "$RCLONE_REMOTE" && -s "$BASE/config/rclone.conf" ]]; then
+  echo "[4/7] Reusing existing project rclone configuration."
+  REMOTE_LIST="$(docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest listremotes)"
+  if grep -qx 'o:' <<<"$REMOTE_LIST"; then
+    RCLONE_REMOTE="o"
+  else
+    REMOTE_COUNT="$(grep -c ':' <<<"$REMOTE_LIST" || true)"
+    if [[ "$REMOTE_COUNT" -eq 1 ]]; then
+      RCLONE_REMOTE="${REMOTE_LIST%:}"
+    fi
+  fi
+fi
+
+# Only ask for OAuth if neither host nor project config can be reused.
+if [[ -z "$RCLONE_REMOTE" ]]; then
+  echo "[4/7] No usable existing rclone remote found. Starting first-time setup."
+  docker run --rm -it -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest config </dev/tty
+  REMOTE_LIST="$(docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest listremotes)"
+  if grep -qx 'o:' <<<"$REMOTE_LIST"; then
+    RCLONE_REMOTE="o"
+  else
+    REMOTE_COUNT="$(grep -c ':' <<<"$REMOTE_LIST" || true)"
+    if [[ "$REMOTE_COUNT" -eq 1 ]]; then
+      RCLONE_REMOTE="${REMOTE_LIST%:}"
+    else
+      echo "Available remotes:"
+      printf '%s\\n' "$REMOTE_LIST"
+      read -r -p "Enter remote name (without colon): " RCLONE_REMOTE </dev/tty
+    fi
+  fi
+fi
+
+if [[ -z "$RCLONE_REMOTE" ]]; then
+  echo "No rclone remote selected."
   exit 1
 fi
 
 REMOTE_LIST="$(docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest listremotes)"
-if grep -qx 'o:' <<<"$REMOTE_LIST"; then
-  RCLONE_REMOTE="o"
-else
-  REMOTE_COUNT="$(grep -c ':' <<<"$REMOTE_LIST" || true)"
-  if [[ "$REMOTE_COUNT" -eq 1 ]]; then
-    RCLONE_REMOTE="${REMOTE_LIST%:}"
-  else
-    echo "Available rclone remotes:"
-    printf '%s\\n' "$REMOTE_LIST"
-    read -r -p "Enter the remote name to use (without colon): " RCLONE_REMOTE </dev/tty
-  fi
-fi
-
-if [[ -z "$RCLONE_REMOTE" ]] || ! grep -qx "${RCLONE_REMOTE}:" <<<"$REMOTE_LIST"; then
-  echo "Remote '$RCLONE_REMOTE' not found in rclone.conf."
+if ! grep -Fqx "${RCLONE_REMOTE}:" <<<"$REMOTE_LIST"; then
+  echo "Remote '$RCLONE_REMOTE' is not present in the copied rclone configuration."
   exit 1
 fi
 
-cat >"$BASE/config/script.conf" <<'EOF'
-drive-name=${RCLONE_REMOTE}
-drive-dir=/RemoteDownloads
-upload-log=/config/upload.log
-delete-empty-dir=true
-delete-dot-aria2=true
-delete-dot-torrent=true
-EOF
+# Validate actual access before enabling automatic deletion after upload.
+docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest lsd "${RCLONE_REMOTE}:" >/dev/null
+
+printf 'drive-name=%s\\ndrive-dir=/RemoteDownloads\\nupload-log=/config/upload.log\\ndelete-empty-dir=true\\ndelete-dot-aria2=true\\ndelete-dot-torrent=true\\n' "$RCLONE_REMOTE" >"$BASE/config/script.conf"
 cat >"$BASE/config/rclone.env" <<'EOF'
 RCLONE_CONFIG=/config/rclone.conf
 RCLONE_TRANSFERS=2
