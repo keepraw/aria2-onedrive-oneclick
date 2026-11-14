@@ -128,7 +128,14 @@ fi
 # Validate actual access before enabling automatic deletion after upload.
 docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest lsd "${RCLONE_REMOTE}:" >/dev/null
 
-printf 'drive-name=%s\ndrive-dir=/RemoteDownloads\nupload-log=/config/upload.log\ndelete-empty-dir=true\ndelete-dot-aria2=true\ndelete-dot-torrent=true\n' "$RCLONE_REMOTE" >"$BASE/config/script.conf"
+cat >"$BASE/config/script.conf" <<EOF
+drive-name=$RCLONE_REMOTE
+drive-dir=/RemoteDownloads
+upload-log=/config/upload.log
+delete-empty-dir=true
+delete-dot-aria2=true
+delete-dot-torrent=true
+EOF
 cat >"$BASE/config/rclone.env" <<'EOF'
 RCLONE_CONFIG=/config/rclone.conf
 RCLONE_TRANSFERS=2
