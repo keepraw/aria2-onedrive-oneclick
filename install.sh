@@ -45,7 +45,7 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 echo "[3/7] Preparing persistent directories..."
-mkdir -p "$BASE"/{config,downloads}
+mkdir -p "$BASE"/{config,downloads,caddy-data,caddy-config}
 chmod 700 "$BASE" "$BASE/config" "$BASE/downloads"
 
 if [[ -e "$BASE/.env" ]]; then
@@ -58,6 +58,12 @@ TZ=Asia/Shanghai
 EOF
   chmod 600 "$BASE/.env"
 fi
+
+# Keep DOMAIN in .env across subsequent reruns.
+if ! grep -q '^DOMAIN=' "$BASE/.env"; then
+  printf '%s\n' 'DOMAIN=dl.557722.xyz' >> "$BASE/.env"
+fi
+chmod 600 "$BASE/.env"
 
 HOST_RCLONE_CONFIG=""
 RCLONE_REMOTE=""
@@ -136,6 +142,10 @@ docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" r
 docker run --rm -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest mkdir "${RCLONE_REMOTE}:RemoteDownloads"
 
 echo "[6/7] Installing Compose project..."
+if ss -ltn 2>/dev/null | grep -Eq '(:80|:443)[[:space:]]' && ! docker ps --format '{{.Names}}' | grep -qx aria2-caddy; then
+  echo "WARNING: port 80 or 443 appears to be in use. Caddy may fail to start."
+fi
+curl -fsSL "https://raw.githubusercontent.com/$REPO/main/Caddyfile" -o "$BASE/Caddyfile"
 curl -fsSL "https://raw.githubusercontent.com/$REPO/main/docker-compose.yml" -o "$BASE/docker-compose.yml"
 cd "$BASE"
 docker compose pull
@@ -146,11 +156,11 @@ PUBLIC_IP="$(curl -4fsS --max-time 8 https://api.ipify.org || true)"
 
 echo "[7/7] Done."
 echo
-echo "AriaNg: http://${PUBLIC_IP:-YOUR_VPS_IP}:6880"
-echo "Aria2 RPC: http://${PUBLIC_IP:-YOUR_VPS_IP}:6800/jsonrpc"
+echo "AriaNg: https://$(sed -n 's/^DOMAIN=//p' "$BASE/.env")"
+echo "Aria2 RPC: wss://$(sed -n 's/^DOMAIN=//p' "$BASE/.env")/jsonrpc"
 echo "RPC secret: $RPC_SECRET"
 echo
-echo "In AriaNg set RPC port 6800, path /jsonrpc, and paste the RPC secret."
-echo "Open TCP 6880, TCP 6800, and TCP+UDP 6888 in your VPS firewall."
+echo "In AriaNg choose WebSocket (WSS), host dl.557722.xyz, port 443, path /jsonrpc, then paste the RPC secret."
+echo "Create a Cloudflare-proxied A record for dl.557722.xyz pointing to this VPS."\necho "Open TCP 80/443 and TCP+UDP 6888; close previous direct TCP 6800/6880."
 echo "IMPORTANT: HTTP does not encrypt the RPC secret. Use only on trusted networks,"
 echo "or put the UI/RPC behind HTTPS/VPN before using it over an untrusted network."
