@@ -20,7 +20,7 @@ case "$ARCH" in amd64|arm64) ;; *) echo "Unsupported architecture: $ARCH"; exit 
 
 echo "[1/7] Installing prerequisites..."
 apt-get update
-apt-get install -y ca-certificates curl gnupg jq unzip
+apt-get install -y ca-certificates curl gnupg jq unzip openssl
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[2/7] Installing Docker Engine from Docker's official Debian repository..."
@@ -61,12 +61,28 @@ if [[ ! -f "$BASE/config/rclone.conf" ]]; then
   echo "Choose Microsoft OneDrive. For headless authorization, follow rclone's"
   echo "on-screen instructions and run the displayed 'rclone authorize' command"
   echo "on your Windows PC, then paste the returned token JSON when prompted."
-  docker run --rm -it -v "$BASE/config:/config" rclone/rclone:latest config
+  docker run --rm -it -e RCLONE_CONFIG=/config/rclone.conf -v "$BASE/config:/config" rclone/rclone:latest config
   if [[ ! -s "$BASE/config/rclone.conf" ]]; then
     echo "rclone.conf was not created. Re-run this installer after completing OAuth."
     exit 1
   fi
 fi
+
+cat >"$BASE/config/script.conf" <<'EOF'
+drive-name=onedrive
+drive-dir=/RemoteDownloads
+upload-log=/config/upload.log
+delete-empty-dir=true
+delete-dot-aria2=true
+delete-dot-torrent=true
+EOF
+cat >"$BASE/config/rclone.env" <<'EOF'
+RCLONE_CONFIG=/config/rclone.conf
+RCLONE_TRANSFERS=2
+RCLONE_RETRIES=3
+RCLONE_RETRIES_SLEEP=10s
+EOF
+chmod 600 "$BASE/config/rclone.conf" "$BASE/config/script.conf" "$BASE/config/rclone.env"
 
 echo "[5/7] Validating OneDrive remote..."
 docker run --rm -v "$BASE/config:/config" rclone/rclone:latest   lsd onedrive: >/dev/null
