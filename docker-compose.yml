@@ -54,18 +54,32 @@ services:
     image: caddy:2
     container_name: aria2-caddy
     restart: unless-stopped
-    environment:
-      DOMAIN: ${DOMAIN}
-    ports:
-      - "80:80"
-      - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./caddy-data:/data
-      - ./caddy-config:/config
+    expose:
+      - "8080"
     depends_on:
       - aria2
       - ariang
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+    mem_limit: 256m
+    cpus: 0.5
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: aria2-cloudflared
+    profiles:
+      - tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      - caddy
     logging:
       driver: json-file
       options:
