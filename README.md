@@ -17,7 +17,7 @@ Run as root on a fresh Debian 13 VPS (amd64 or arm64):
 curl -fsSL https://raw.githubusercontent.com/keepraw/aria2-onedrive-oneclick/main/install.sh | bash
 ```
 
-The installer installs Docker if needed, creates a random RPC secret, guides the one-time rclone Microsoft OAuth setup, validates OneDrive, then starts the containers.
+The installer installs Docker if needed, creates a random RPC secret, detects and reuses the existing host rclone configuration (including a remote named `o`), validates the selected remote, then starts the containers. If no host rclone configuration exists, it guides the one-time Microsoft OAuth setup.
 
 For headless OAuth, rclone will print the exact `rclone authorize` command. Run it on a Windows PC with rclone installed, sign in to Microsoft, and paste the returned token JSON into the VPS prompt. No token is stored in this repository.
 
@@ -42,7 +42,7 @@ The upstream Aria2 Pro image has a built-in `SPECIAL_MODE=rclone` completion hoo
 - The upstream upload hook retries failed transfers.
 - Aria2 downloads directly to the VPS; rclone uploads directly from VPS to OneDrive.
 
-The rclone remote name must be `onedrive`. The installer creates `RemoteDownloads` automatically.
+The installer prefers the remote named `o` when present. Otherwise, it automatically selects the only configured remote, or asks you to choose when multiple remotes exist. It creates `RemoteDownloads` automatically.
 
 ## Persistent data
 
