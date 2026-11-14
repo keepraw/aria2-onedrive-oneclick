@@ -1,0 +1,4 @@
+.env
+*.log
+config/rclone.conf
+config/aria2.session
